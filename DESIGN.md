@@ -14,16 +14,17 @@ ROME's failure was not a bad answer. It was **unbounded autonomous execution**: 
 - **Small damage window.** Every iteration is another chance for an agent to take an unintended action. Three keeps that window small.
 - **It is a policy, not a magic number.** `MAX_EXECUTIONS` lives in `config.py` next to every other ceiling, so it can be tuned per risk tier and audited in one place.
 
-**Defence in depth.** A single counter can be bypassed by a routing bug, so four independent layers exist:
+**Defence in depth.** A single counter can be bypassed by a routing bug, so five independent layers exist:
 
 | Layer | Mechanism | Catches |
 |---|---|---|
 | 1 | `execution_count` + conditional edge | normal reject loops |
 | 2 | Kill-switch (`MAS_KILL_SWITCH=1` or `KILL_SWITCH` file), checked by `loop_guard` and by a CrewAI `step_callback` on every executor step | operator emergency stop, including mid-execution |
 | 3 | LangGraph `recursion_limit=20` (the worst legitimate run needs 14 steps) | graph wiring bugs |
-| 4 | Loops inside nodes are bounded too: PydanticAI `retries=1`, CrewAI `max_iter=3` (default 20), `max_execution_time=60s`, `allow_delegation=False` | hidden loops inside frameworks |
+| 4 | Rate-limit handling: HTTP 429 gets at most 2 retries with a fixed wait, and the kill-switch is checked between retries | provider throttling turning into a silent retry loop |
+| 5 | Loops inside nodes are bounded too: PydanticAI `retries=1`, CrewAI `max_iter=3` (default 20), `max_execution_time=60s`, `allow_delegation=False` | hidden loops inside frameworks |
 
-Layer 4 matters. A graph-level cap is misleading if a node hides its own loop. PydanticAI retries schema failures and CrewAI agents iterate internally, and both defaults are generous.
+Layer 5 matters. A graph-level cap is misleading if a node hides its own loop. PydanticAI retries schema failures and CrewAI agents iterate internally, and both defaults are generous.
 
 **Every exit is safe and typed.** Loop cap, kill-switch, planner/executor/reviewer exceptions and schema failures all route to one `fallback` node. It returns a `FinalResponse` with a closed `status`, never a raw string or a stack trace. Unapproved output is never written to memory.
 
@@ -39,7 +40,7 @@ Schemas are the contract between agents, so their job is to make the next step's
 
 ## 4. Memory without runaway tokens
 
-Mem0 stores facts persistently: SQLite holds the history/audit log, Chroma the vectors, and local HF embeddings avoid API cost. Each run injects only the **top-3** relevant facts into the prompt, never the raw transcript, so prompt size stays flat as history grows. Memories are keyed by `user_id` (isolation is tested). Memory is best-effort: if it is unavailable, the run proceeds without it rather than failing. Trade-off: `add(infer=True)` costs one LLM call to condense facts.
+Mem0 stores facts persistently: SQLite holds the history/audit log, Chroma the vectors, and local HF embeddings avoid API cost. Each run injects only the **top-3** relevant facts into the prompt, never the raw transcript, so prompt size stays flat as history grows. Memories are keyed by `user_id` (isolation is tested). On machines where application-control policy blocks native ML libraries, the store falls back to a pure-Python lexical embedder rather than failing. This keeps persistence and isolation intact but trades semantic recall for word-overlap recall, and the switch is logged. Memory is best-effort: if it is unavailable, the run proceeds without it rather than failing. By default the store keeps the user's own statements verbatim (`infer=False`), because Mem0's fact-extraction prompt (~8,200 tokens) exceeds the Groq free-tier limit of 8,000 tokens/minute. On a paid tier `MAS_MEM_INFER=1` lets Groq condense facts, at the cost of one extra LLM call per completed run. Assistant answers are stored only when condensed, so raw answers never bloat later prompts.
 
 ## 5. What this does *not* solve (scope)
 

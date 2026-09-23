@@ -44,3 +44,18 @@ def test_memory_persists_across_processes(tmp_path):
     mine, others = out.strip().splitlines()
     assert "bullet points" in mine
     assert others == "[]"  # memories are isolated per user_id
+
+
+def test_live_store_falls_back_to_lexical_embedder(tmp_path, monkeypatch):
+    """Where native ML libraries are blocked (e.g. Windows Application Control),
+    the live store must still start, persist and recall."""
+    monkeypatch.setenv("MAS_EMBEDDER", "hashing")
+    monkeypatch.setenv("GROQ_API_KEY", "unused-in-this-test")
+    from mas.memory import HashingEmbedder, MemoryStore
+
+    store = MemoryStore.local(tmp_path)
+    assert isinstance(store._m.embedding_model, HashingEmbedder)
+    assert store.infer is False         # free-tier default: no LLM extraction call
+    store.remember_sync("deb", [{"role": "user", "content": "I prefer answers in bullet points"}])
+    assert "bullet points" in " ".join(store.recall_sync("deb", "answer format bullet points"))
+    assert (tmp_path / "lexical" / "mem0_history.db").exists()

@@ -1,0 +1,29 @@
+The 'chroma' vector store does not support keyword search. Hybrid (BM25) scoring will be disabled and search will use semantic similarity only. To enable hybrid search, switch to a store with keyword_search support (e.g. qdrant, elasticsearch, pgvector).
+Failed to load spaCy lemma model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
+Failed to load spaCy full model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
+[guardrails] MAX_EXECUTIONS=3 recursion_limit=20 kill_switch_file=KILL_SWITCH
+--- trace ---
+  load_memory: 2 facts
+  planner: 3 steps
+  loop_guard: execution_count=1
+  executor: attempt 1
+  reviewer: reject
+  loop_guard: execution_count=2
+  executor: attempt 2
+  reviewer: reject
+  loop_guard: execution_count=3
+  executor: attempt 3
+  reviewer: reject
+  loop_guard: execution_count=4
+  fallback: status=terminated_loop_cap
+  save_memory: stored 1 message(s)
+--- recalled memories ---
+  - What answer format do I prefer?
+  - Outline a 3-step plan to migrate a CRM database. I prefer answers in bullet points.
+--- FinalResponse (validated) ---
+{
+  "status": "terminated_loop_cap",
+  "answer": "I could not produce a reviewer-approved answer within the safety budget of 3 execution attempts, so execution was stopped. No further actions were taken. Please refine the request or escalate to a human.",
+  "execution_count": 4,
+  "reason": "execution_count=4 exceeded MAX_EXECUTIONS=3"
+}

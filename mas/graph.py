@@ -12,6 +12,8 @@ deterministic Python, so the control flow itself cannot be talked out of the cap
 """
 from __future__ import annotations
 
+import asyncio
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -22,6 +24,7 @@ from . import config
 from .agents import USAGE_LIMITS, ExecutorCallable
 from .guardrails import (
     KillSwitchEngaged,
+    kill_switch_engaged,
     fallback,
     loop_guard,
     route_after_guard,
@@ -51,6 +54,26 @@ def _halt(exc: Exception, node: str) -> dict:
     }
 
 
+def _is_rate_limited(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return "429" in text or "rate_limit" in text or "ratelimit" in text
+
+
+async def _with_rate_limit_retry(make_call, node: str):
+    """Bounded retry for HTTP 429 only: at most RATE_LIMIT_RETRIES extra attempts with a
+    fixed wait. Any other error, or a 429 after the last retry, propagates to the node's
+    fallback handling. This is deliberately not an open-ended loop."""
+    for attempt in range(config.RATE_LIMIT_RETRIES + 1):
+        try:
+            return await make_call()
+        except Exception as exc:
+            if attempt == config.RATE_LIMIT_RETRIES or not _is_rate_limited(exc) or kill_switch_engaged():
+                raise
+            print(f"[{node}] rate limited; waiting {config.RATE_LIMIT_WAIT_S:.0f}s "
+                  f"(retry {attempt + 1}/{config.RATE_LIMIT_RETRIES})", file=sys.stderr)
+            await asyncio.sleep(config.RATE_LIMIT_WAIT_S)
+
+
 def build_graph(deps: MASDeps):
     async def load_memory(state: GraphState) -> dict:
         if deps.memory is None:
@@ -62,10 +85,13 @@ def build_graph(deps: MASDeps):
         return {"memories": mems, "trace": [f"load_memory: {len(mems)} facts"]}
 
     async def planner(state: GraphState) -> dict:
+        if kill_switch_engaged():  # stop before the first LLM call, not only at loop_guard
+            return {"halt_reason": "kill_switch", "trace": ["planner: kill-switch"]}
         mem = "\n".join(f"- {m}" for m in state.get("memories", [])) or "- (none)"
         prompt = f"Task: {state['task']}\n\nRelevant user memories:\n{mem}"
         try:
-            res = await deps.planner.run(prompt, usage_limits=USAGE_LIMITS)
+            res = await _with_rate_limit_retry(
+                lambda: deps.planner.run(prompt, usage_limits=USAGE_LIMITS), "planner")
         except Exception as exc:
             return _halt(exc, "planner")
         return {"plan": res.output, "trace": [f"planner: {len(res.output.steps)} steps"]}
@@ -74,11 +100,14 @@ def build_graph(deps: MASDeps):
         review = state.get("review")
         feedback = review.feedback if review and review.verdict == "reject" else None
         try:
-            out = await deps.executor(
-                task=state["task"],
-                plan=state["plan"],
-                feedback=feedback,
-                memories=state.get("memories", []),
+            out = await _with_rate_limit_retry(
+                lambda: deps.executor(
+                    task=state["task"],
+                    plan=state["plan"],
+                    feedback=feedback,
+                    memories=state.get("memories", []),
+                ),
+                "executor",
             )
         except Exception as exc:
             return _halt(exc, "executor")
@@ -93,7 +122,8 @@ def build_graph(deps: MASDeps):
             f"Executor result:\n{state['execution'].result}"
         )
         try:
-            res = await deps.reviewer.run(prompt, usage_limits=USAGE_LIMITS)
+            res = await _with_rate_limit_retry(
+                lambda: deps.reviewer.run(prompt, usage_limits=USAGE_LIMITS), "reviewer")
         except Exception as exc:
             return _halt(exc, "reviewer")
         return {"review": res.output, "trace": [f"reviewer: {res.output.verdict}"]}
@@ -112,7 +142,9 @@ def build_graph(deps: MASDeps):
             return {"trace": ["save_memory: disabled"]}
         final = state["final"]
         messages = [{"role": "user", "content": state["task"]}]
-        if final.status == "completed":  # never persist unapproved output
+        # Never persist unapproved output. Assistant answers are only stored when Mem0
+        # condenses them into facts (infer=True); raw answers would bloat later prompts.
+        if final.status == "completed" and deps.memory.infer:
             messages.append({"role": "assistant", "content": final.answer})
         try:
             await deps.memory.remember(state["user_id"], messages)

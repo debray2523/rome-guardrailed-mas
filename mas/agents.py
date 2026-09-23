@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable, Optional, Protocol
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, NativeOutput
 from pydantic_ai.models import Model
 from pydantic_ai.usage import UsageLimits
 
@@ -40,26 +40,33 @@ def groq_model_name() -> str:
     return f"groq:{config.GROQ_MODEL}"
 
 
-def build_planner(model: Model | str | None = None) -> Agent[None, PlannerOutput]:
+def _live_settings() -> dict:
+    return {"max_tokens": config.LLM_MAX_OUTPUT_TOKENS,
+            "groq_reasoning_effort": config.LLM_REASONING_EFFORT}
+
+
+def _agent(model, schema, instructions: str, name: str):
+    """Live (model=None): Groq with native JSON-schema structured output, which the
+    gpt-oss models support, low reasoning effort and capped output. Tests pass a
+    scripted model and use PydanticAI's default tool-call output mode."""
+    live = model is None
     return Agent(
-        model or groq_model_name(),
-        output_type=PlannerOutput,
-        instructions=PLANNER_INSTRUCTIONS,
+        groq_model_name() if live else model,
+        output_type=NativeOutput(schema) if live else schema,
+        instructions=instructions,
         retries=config.PYDANTIC_AI_RETRIES,
-        name="planner",
+        model_settings=_live_settings() if live else None,
+        name=name,
         defer_model_check=True,
     )
+
+
+def build_planner(model: Model | str | None = None) -> Agent[None, PlannerOutput]:
+    return _agent(model, PlannerOutput, PLANNER_INSTRUCTIONS, "planner")
 
 
 def build_reviewer(model: Model | str | None = None) -> Agent[None, ReviewerOutput]:
-    return Agent(
-        model or groq_model_name(),
-        output_type=ReviewerOutput,
-        instructions=REVIEWER_INSTRUCTIONS,
-        retries=config.PYDANTIC_AI_RETRIES,
-        name="reviewer",
-        defer_model_check=True,
-    )
+    return _agent(model, ReviewerOutput, REVIEWER_INSTRUCTIONS, "reviewer")
 
 
 class ExecutorFn(Protocol):
@@ -80,7 +87,12 @@ class CrewAIExecutor:
     def __init__(self, model: str | None = None):
         from crewai import LLM
 
-        self.llm = LLM(model=model or f"groq/{config.GROQ_MODEL}", temperature=0.0)
+        self.llm = LLM(
+            model=model or f"groq/{config.GROQ_MODEL}",
+            temperature=0.0,
+            max_tokens=config.LLM_MAX_OUTPUT_TOKENS,
+            reasoning_effort=config.LLM_REASONING_EFFORT,
+        )
 
     async def __call__(self, task, plan, feedback, memories) -> ExecutorOutput:
         from crewai import Agent as CrewAgent

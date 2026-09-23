@@ -1,0 +1,35 @@
+[guardrails] MAX_EXECUTIONS=3 recursion_limit=20 kill_switch_file=KILL_SWITCH
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	load_memory(load_memory)
+	planner(planner)
+	loop_guard(loop_guard)
+	executor(executor)
+	reviewer(reviewer)
+	finalize(finalize)
+	fallback(fallback)
+	save_memory(save_memory)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> load_memory;
+	executor -.-> fallback;
+	executor -.-> reviewer;
+	fallback --> save_memory;
+	finalize --> save_memory;
+	load_memory --> planner;
+	loop_guard -.-> executor;
+	loop_guard -.-> fallback;
+	planner -.-> fallback;
+	planner -.-> loop_guard;
+	reviewer -.-> fallback;
+	reviewer -.-> finalize;
+	reviewer -.-> loop_guard;
+	save_memory --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+

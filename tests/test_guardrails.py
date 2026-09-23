@@ -103,3 +103,19 @@ def test_invalid_planner_output_is_rejected_not_passed_on():
 def test_recursion_limit_is_a_real_backstop():
     # A worst-case run (3 rejections) fits inside the limit, but not with much slack.
     assert 14 <= config.RECURSION_LIMIT <= 25
+
+
+def test_kill_switch_stops_before_planner_llm_call(monkeypatch):
+    calls = []
+
+    def planner_fn(messages, info: AgentInfo) -> ModelResponse:
+        calls.append(1)
+        args = {"goal": "never", "steps": [{"step_number": 1, "action": "never run"}]}
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
+
+    monkeypatch.setenv(config.KILL_SWITCH_ENV, "1")
+    executor = StubExecutor()
+    state = run(MASDeps(build_planner(FunctionModel(planner_fn)), stub_reviewer(), executor))
+    assert calls == [] and executor.calls == 0      # no LLM call at all
+    assert state["final"].status == "killed"
+    assert state["execution_count"] == 0

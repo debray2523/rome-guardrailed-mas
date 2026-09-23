@@ -1,0 +1,15 @@
+[guardrails] MAX_EXECUTIONS=3 recursion_limit=20 kill_switch_file=KILL_SWITCH
+--- trace ---
+  load_memory: disabled
+  planner: kill-switch
+  fallback: status=killed
+  save_memory: disabled
+--- recalled memories ---
+  - (none)
+--- FinalResponse (validated) ---
+{
+  "status": "killed",
+  "answer": "Execution was halted by the system kill-switch. No further actions were taken.",
+  "execution_count": 0,
+  "reason": "operator kill-switch engaged"
+}

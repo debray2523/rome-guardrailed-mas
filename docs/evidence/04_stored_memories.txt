@@ -1,0 +1,5 @@
+The 'chroma' vector store does not support keyword search. Hybrid (BM25) scoring will be disabled and search will use semantic similarity only. To enable hybrid search, switch to a store with keyword_search support (e.g. qdrant, elasticsearch, pgvector).
+[guardrails] MAX_EXECUTIONS=3 recursion_limit=20 kill_switch_file=KILL_SWITCH
+2 stored memories for user 'deb':
+  - Outline a 3-step plan to migrate a CRM database. I prefer answers in bullet points.
+  - What answer format do I prefer?

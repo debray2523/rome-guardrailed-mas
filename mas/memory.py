@@ -12,6 +12,7 @@ import hashlib
 import math
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -41,8 +42,9 @@ def mem0_config(data_dir: Path | None = None) -> dict[str, Any]:
 
 
 class HashingEmbedder:
-    """Offline, deterministic bag-of-words embedder (384 dims) used only by the
-    offline demo and tests, so persistence can be shown without downloads or keys."""
+    """Deterministic bag-of-words embedder (384 dims), pure Python. Used by the offline
+    demo and tests, and as the live fallback where native ML libraries are blocked.
+    Similarity is lexical (shared words), not semantic."""
 
     dims = config.EMBED_DIMS
 
@@ -67,9 +69,30 @@ class MemoryStore:
 
     @classmethod
     def local(cls, data_dir: Path | None = None) -> "MemoryStore":
+        """Live store. With MAS_MEM_INFER=1, Groq condenses facts (infer=True); by default
+        the user's own statements are stored verbatim (see config.MEM_INFER).
+
+        Embedder: local Hugging Face model by default. If MAS_EMBEDDER=hashing, or the
+        Hugging Face stack cannot load (e.g. a Windows Application Control policy blocks
+        the scipy/torch DLLs), fall back to the pure-Python HashingEmbedder. The fallback
+        is lexical (word overlap), not semantic, and is reported on stderr.
+        """
         from mem0 import Memory
 
-        return cls(Memory.from_config(mem0_config(data_dir)), infer=True)
+        choice = os.getenv("MAS_EMBEDDER", "huggingface").strip().lower()
+        if choice != "hashing":
+            try:
+                return cls(Memory.from_config(mem0_config(data_dir)), infer=config.MEM_INFER)
+            except (ImportError, OSError) as exc:
+                print(f"[memory] Hugging Face embedder unavailable ({type(exc).__name__}: "
+                      f"{str(exc)[:120]}); using the lexical HashingEmbedder instead.",
+                      file=sys.stderr)
+        cfg = mem0_config(Path(data_dir or config.DATA_DIR) / "lexical")
+        # The embedder provider only needs to construct; it is replaced before use.
+        cfg["embedder"] = {"provider": "openai", "config": {"api_key": "unused", "embedding_dims": 384}}
+        mem = Memory.from_config(cfg)
+        mem.embedding_model = HashingEmbedder()
+        return cls(mem, infer=config.MEM_INFER)
 
     @classmethod
     def offline(cls, data_dir: Path | None = None) -> "MemoryStore":

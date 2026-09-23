@@ -1,0 +1,21 @@
+The 'chroma' vector store does not support keyword search. Hybrid (BM25) scoring will be disabled and search will use semantic similarity only. To enable hybrid search, switch to a store with keyword_search support (e.g. qdrant, elasticsearch, pgvector).
+Failed to load spaCy lemma model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
+Failed to load spaCy full model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
+[guardrails] MAX_EXECUTIONS=3 recursion_limit=20 kill_switch_file=KILL_SWITCH
+--- trace ---
+  load_memory: 0 facts
+  planner: 3 steps
+  loop_guard: execution_count=1
+  executor: attempt 1
+  reviewer: approve
+  finalize: completed
+  save_memory: stored 1 message(s)
+--- recalled memories ---
+  - (none)
+--- FinalResponse (validated) ---
+{
+  "status": "completed",
+  "answer": "- Perform a full backup of the current CRM database and verify the backup integrity.\n- Set up the target environment (new server/DBMS), configure schema, and run a test migration using a copy of the backup to validate data mapping and performance.\n- Schedule a maintenance window, pause writes to the source database, execute the final data transfer, run post\u2011migration validation checks, and switch the CRM application to the new database.",
+  "execution_count": 1,
+  "reason": "approved by reviewer"
+}
