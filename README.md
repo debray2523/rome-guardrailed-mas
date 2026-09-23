@@ -214,7 +214,7 @@ mas/
   state.py        GraphState (execution_count, halt_reason, trace)
   guardrails.py   loop_guard, conditional edges, kill-switch, fallback
   agents.py       PydanticAI planner/reviewer, CrewAI executor
-  memory.py       Mem0 config (SQLite + Chroma + HF embeddings)
+  memory.py       Mem0 config (SQLite + Chroma + local embeddings)
   graph.py        LangGraph wiring
   offline.py      scripted models for tests and --offline
   cli.py          command line
