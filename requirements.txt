@@ -1,0 +1,12 @@
+# Versions verified together; CrewAI / LangChain pins conflict easily, so keep these.
+langgraph==1.2.12
+crewai==0.193.2
+litellm==1.74.9
+pydantic==2.13.5
+pydantic-ai-slim[groq]==2.48.0
+groq==1.7.0
+mem0ai==2.1.0
+chromadb==1.5.9
+sentence-transformers>=3.0   # local HF embeddings for Mem0 (live mode)
+python-dotenv==1.2.3
+pytest==9.1.1
